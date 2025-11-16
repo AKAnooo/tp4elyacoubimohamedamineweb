@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-import ma.emsi.elyacoubimohamedamine.tp2elyacoubimohamedamineweb.llm.LlmClient;
+import com.example.tp4elyacoubimohamedamineweb.llm.LlmClient;
 
 @Named
 @ViewScoped
