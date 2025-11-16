@@ -24,9 +24,14 @@ import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
+import dev.langchain4j.rag.content.retriever.WebSearchContentRetriever;
 import dev.langchain4j.rag.DefaultRetrievalAugmentor;
 import dev.langchain4j.rag.RetrievalAugmentor;
 import dev.langchain4j.rag.query.router.LanguageModelQueryRouter;
+import dev.langchain4j.rag.query.router.DefaultQueryRouter;
+
+import dev.langchain4j.web.search.WebSearchEngine;
+import dev.langchain4j.web.search.tavily.TavilyWebSearchEngine;
 
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.memory.ChatMemory;
@@ -41,11 +46,17 @@ public class LlmClient implements Serializable {
     private final GoogleAiGeminiChatModel model;
     private final ChatMemory chatMemory;
 
+    // Test 3 : routage entre 2 PDF
     private final Assistant assistant;
+
+    // Test 5 : rag.pdf + Web Tavily
+    private final Assistant assistantTest5;
 
     public LlmClient() {
         String apiKey = System.getenv("GEMINI_KEY");
-
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException("Variable d'environnement GEMINI_KEY manquante !");
+        }
 
         this.model = GoogleAiGeminiChatModel.builder()
                 .apiKey(apiKey)
@@ -56,6 +67,8 @@ public class LlmClient implements Serializable {
 
         EmbeddingModel embeddingModel = new AllMiniLmL6V2EmbeddingModel();
         var splitter = DocumentSplitters.recursive(500, 50);
+
+        // ---------- Test 3 : ingestion des 2 PDF ----------
 
         Path pdf1 = loadFromResources("rag.pdf");
         Document doc1 = FileSystemDocumentLoader.loadDocument(pdf1);
@@ -90,16 +103,13 @@ public class LlmClient implements Serializable {
                 les LLM, les embeddings et l'intelligence artificielle.
                 À utiliser uniquement si la question parle de RAG, de LLM, d'IA,
                 d'embeddings, de pipeline RAG, etc.
-                Ne pas utiliser pour les questions sur Android ou le développement mobile.
                 """);
 
         descriptions.put(retriever2, """
                 Source 2 : QCM et questions de cours sur Android et/ou un autre chapitre spécifique.
                 À utiliser si la question parle d'Android, d'applications mobiles,
                 d'activities, d'intents, de layouts, de fragments ou de QCM/examens liés à ce cours.
-                Ne pas utiliser pour les questions sur le RAG ou l'IA en général.
                 """);
-
 
         LanguageModelQueryRouter router = new LanguageModelQueryRouter(model, descriptions);
 
@@ -112,10 +122,34 @@ public class LlmClient implements Serializable {
                 .chatMemory(chatMemory)
                 .retrievalAugmentor(retrievalAugmentor)
                 .build();
-    }
-    public String chat(String prompt) {
-        if (prompt == null || prompt.isBlank()) return "";
-        return assistant.chat(prompt.trim());
+
+        // ---------- Test 5 : rag.pdf + Web Tavily ----------
+
+        String tavilyKey = System.getenv("TAVILY_API_KEY");
+        if (tavilyKey == null || tavilyKey.isBlank()) {
+            throw new IllegalStateException("Variable d'environnement TAVILY_API_KEY manquante !");
+        }
+
+        WebSearchEngine webSearchEngine = TavilyWebSearchEngine.builder()
+                .apiKey(tavilyKey)
+                .build();
+
+        ContentRetriever webRetriever = WebSearchContentRetriever.builder()
+                .webSearchEngine(webSearchEngine)
+                .maxResults(5)
+                .build();
+
+        DefaultQueryRouter routerTest5 = new DefaultQueryRouter(retriever1, webRetriever);
+
+        RetrievalAugmentor retrievalAugmentorTest5 = DefaultRetrievalAugmentor.builder()
+                .queryRouter(routerTest5)
+                .build();
+
+        this.assistantTest5 = AiServices.builder(Assistant.class)
+                .chatModel(model)
+                .chatMemory(chatMemory)
+                .retrievalAugmentor(retrievalAugmentorTest5)
+                .build();
     }
 
     private Path loadFromResources(String resourceName) {
@@ -139,5 +173,35 @@ public class LlmClient implements Serializable {
         chatMemory.add(SystemMessage.from(this.systemRole));
     }
 
+    // ---------- Test 3 : routage entre 2 PDF ----------
+    public String chatTest3(String prompt) {
+        if (prompt == null || prompt.isBlank()) return "";
+        return assistant.chat(prompt.trim());
+    }
 
+    public String chatTest3(String systemRole, String prompt) {
+        setSystemRole(systemRole);
+        return chatTest3(prompt);
+    }
+
+    // ---------- Test 5 : rag.pdf + Web Tavily ----------
+    public String chatTest5(String prompt) {
+        if (prompt == null || prompt.isBlank()) return "";
+        return assistantTest5.chat(prompt.trim());
+    }
+
+    public String chatTest5(String systemRole, String prompt) {
+        setSystemRole(systemRole);
+        return chatTest5(prompt);
+    }
+
+    // Méthodes "génériques" si jamais ton code appelle encore chat(...)
+    // Par défaut, on route sur Test 3 pour ne rien casser.
+    public String chat(String prompt) {
+        return chatTest3(prompt);
+    }
+
+    public String chat(String systemRole, String prompt) {
+        return chatTest3(systemRole, prompt);
+    }
 }

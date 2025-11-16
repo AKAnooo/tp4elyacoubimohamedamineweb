@@ -19,26 +19,22 @@ import com.example.tp4elyacoubimohamedamineweb.llm.LlmClient;
 public class Bb implements Serializable {
 
     private String roleSysteme;
-
     private boolean roleSystemeChangeable = true;
-
 
     private List<SelectItem> listeRolesSysteme;
 
     private String question;
-
     private String reponse;
-
     private StringBuilder conversation = new StringBuilder();
 
+    // true = Test 5 (RAG + Web), false = Test 3 (routage 2 PDF)
+    private boolean utiliserTest5;
 
     @Inject
     private FacesContext facesContext;
 
-    // ➜ Injection du client LLM
     @Inject
     private LlmClient llmClient;
-
 
     public Bb() {
     }
@@ -79,6 +75,14 @@ public class Bb implements Serializable {
         this.conversation = new StringBuilder(conversation);
     }
 
+    public boolean isUtiliserTest5() {
+        return utiliserTest5;
+    }
+
+    public void setUtiliserTest5(boolean utiliserTest5) {
+        this.utiliserTest5 = utiliserTest5;
+    }
+
     public String envoyer() {
         if (question == null || question.isBlank()) {
             FacesMessage message = new FacesMessage(
@@ -95,17 +99,34 @@ public class Bb implements Serializable {
                 this.roleSysteme = "You are a helpful assistant. Answer clearly and concisely.";
             }
             this.roleSystemeChangeable = false;
-
-
         }
 
         try {
-            // ➜ Envoi de la question au LLM (la mémoire de chat est gérée dans LlmClient)
-            String answer = llmClient.chat(this.question);
-            this.reponse = (answer == null || answer.isBlank()) ? "(Réponse vide du LLM)" : answer;
+            String answer;
+            boolean premierMessage = this.conversation.isEmpty();
+
+            if (premierMessage) {
+                if (utiliserTest5) {
+                    // Test 5 : rag.pdf + Web Tavily
+                    answer = llmClient.chatTest5(this.roleSysteme, this.question);
+                } else {
+                    // Test 3 : routage entre les 2 PDF
+                    answer = llmClient.chatTest3(this.roleSysteme, this.question);
+                }
+            } else {
+                if (utiliserTest5) {
+                    answer = llmClient.chatTest5(this.question);
+                } else {
+                    answer = llmClient.chatTest3(this.question);
+                }
+            }
+
+            this.reponse = (answer == null || answer.isBlank())
+                    ? "(Réponse vide du LLM)"
+                    : answer;
 
             afficherConversation();
-            return null; // rester sur la même page
+            return null;
         } catch (Exception e) {
             FacesMessage message = new FacesMessage(
                     FacesMessage.SEVERITY_ERROR,
@@ -116,11 +137,10 @@ public class Bb implements Serializable {
         }
     }
 
-
     private boolean estPalindromeMot(String mot) {
         String nettoye = mot.toLowerCase(Locale.FRENCH)
                 .replaceAll("[^a-z0-9àâäéèêëîïôöùûüÿç]", "");
-        if (nettoye.length() <= 1) return false; // ignorer les lettres seules
+        if (nettoye.length() <= 1) return false;
         return new StringBuilder(nettoye).reverse().toString().equals(nettoye);
     }
 
@@ -129,19 +149,21 @@ public class Bb implements Serializable {
     }
 
     private void afficherConversation() {
-        this.conversation.append("== User:\n").append(question).append("\n== Serveur:\n").append(reponse).append("\n");
+        this.conversation
+                .append(utiliserTest5 ? "[Test 5] " : "[Test 3] ")
+                .append("== User:\n").append(question)
+                .append("\n== Serveur:\n").append(reponse)
+                .append("\n");
     }
 
     public List<SelectItem> getRolesSysteme() {
         if (this.listeRolesSysteme == null) {
-            // Génère les rôles de l'API prédéfinis
             this.listeRolesSysteme = new ArrayList<>();
-            // Vous pouvez évidemment écrire ces rôles dans la langue que vous voulez.
+
             String role = """
                     You are a helpful assistant. You help the user to find the information they need.
                     If the user type a question, you answer it.
                     """;
-            // 1er argument : la valeur du rôle, 2ème argument : le libellé du rôle
             this.listeRolesSysteme.add(new SelectItem(role, "Assistant"));
 
             role = """
